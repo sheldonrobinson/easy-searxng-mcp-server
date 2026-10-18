@@ -1,0 +1,103 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "easy-searxng-mcp-server"
+version = "0.1.0"
+description = "Konnek SearXNG MCP Server Agent"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Sheldon Robinson"}
+]
+keywords = ["mcp", "searxng", "search", "metasearch", "agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    # Local searxng submodule with Windows patches
+    "searxng @ file:///${PROJECT_ROOT}/searxng#subdirectory=searxng",
+    "flask",
+    "waitress",
+    "uvicorn",
+    "starlette",
+    "sse-starlette",
+    "anyio",
+    "pydantic",
+    "aiohttp",
+    "beautifulsoup4",
+    "pyyaml",
+    "platformdirs",
+    "mcp-utils",
+    "strif",
+    "queuelib",
+    "lancedb>=0.16",
+    "numpy",
+]
+
+[project.optional-dependencies]
+embeddings = [
+    "openai",
+]
+markitdown = [
+    "markitdown",
+]
+all-formats = [
+    "markitdown",
+    "faster-whisper",
+]
+pptx = [
+    "markitdown[pptx]",
+]
+docx = [
+    "markitdown[docx]",
+]
+xlsx = [
+    "markitdown[xlsx]",
+]
+xls = [
+    "markitdown[xls]",
+]
+pdf = [
+    "markitdown[pdf]",
+]
+outlook = [
+    "markitdown[outlook]",
+]
+audio-transcription = [
+    "markitdown[audio-transcription]",
+    "SpeechRecognition[faster-whisper]",
+]
+youtube-transcription = [
+    "markitdown[youtube-transcription]",
+]
+
+[project.urls]
+Homepage = "https://github.com/sheldonrobinson/AI4AII"
+Documentation = "https://github.com/sheldonrobinson/AI4AII#readme"
+Repository = "https://github.com/sheldonrobinson/AI4AII.git"
+Issues = "https://github.com/sheldonrobinson/AI4AII/issues"
+
+[project.scripts]
+easy-searxng-mcp-server = "src.main:main"
+
+[tool.setuptools.packages.find]
+include = ["src*", "src.*"]
+namespaces = false
+
+[tool.uvx]
+default-groups = ["main"]

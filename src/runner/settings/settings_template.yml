@@ -1,0 +1,92 @@
+# SimpleXNG Settings Template for Konnek SearXNG MCP Server
+# Based on SearXNG settings.yml
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Konnek SearXNG MCP"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  autocomplete_min: 4
+  favicon_resolver: ""
+  default_lang: "auto"
+  suspended_times:
+    SearxEngineAccessDenied: 0
+  formats:
+    - html
+    - json
+
+server:
+  # Will be overridden by CLI arguments
+  port: 11888
+  bind_address: "127.0.0.1"
+  secret_key: "konnek-searxng-local-key-change-for-production"
+  limiter: false
+  base_url: false
+  public_instance: false
+  image_proxy: false
+  http_protocol_version: "1.1"
+  method: "POST"
+  default_http_headers:
+    X-Content-Type-Options: nosniff
+    X-Download-Options: noopen
+    X-Robots-Tag: noindex, nofollow
+    Referrer-Policy: no-referrer
+    X-Forwarded-For: "127.0.0.1"
+    X-Real-IP: "127.0.0.1"
+
+valkey:
+  url: false
+
+redis:
+  # Disable Redis for local use
+  url: false
+
+ui:
+  static_use_hash: false
+  static_path: ""
+  templates_path: ""
+  query_in_title: false
+  infinite_scroll: false
+  default_theme: simple
+  center_alignment: false
+  default_locale: ""
+  theme_args:
+    simple_style: auto
+  search_on_category_select: false
+
+outgoing:
+  request_timeout: 3.0
+  useragent_suffix: ""
+  pool_connections: 100
+  pool_maxsize: 10
+  enable_http2: true
+
+plugins:
+  searx.plugins.calculator.SXNGPlugin:
+    active: true
+  searx.plugins.hash_plugin.SXNGPlugin:
+    active: true
+  searx.plugins.self_info.SXNGPlugin:
+    active: true
+  searx.plugins.unit_converter.SXNGPlugin:
+    active: true
+  searx.plugins.ahmia_filter.SXNGPlugin:
+    active: false
+  searx.plugins.hostnames.SXNGPlugin:
+    active: true
+  searx.plugins.time_zone.SXNGPlugin:
+    active: true
+  searx.plugins.oa_doi_rewrite.SXNGPlugin:
+    active: false
+  searx.plugins.tor_check.SXNGPlugin:
+    active: false
+  searx.plugins.tracker_url_remover.SXNGPlugin:
+    active: true
