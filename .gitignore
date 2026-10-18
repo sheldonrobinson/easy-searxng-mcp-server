@@ -52,6 +52,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Bundled models (downloaded via post-install script)
+models/
+
 # Translations
 *.mo
 *.pot

@@ -195,7 +195,7 @@ Or via uvx:
 uvx --from 'easy-searxng-mcp-server[all-formats]' easy-searxng-mcp-server
 ```
 
-Audio transcription uses [FasterWhisper](https://github.com/SYSTRAN/faster-whisper) for high-performance speech recognition. The model size can be configured via the `WHISPER_MODEL` environment variable (default: `tiny`).
+Audio transcription uses [FasterWhisper](https://github.com/SYSTRAN/faster-whisper) for high-performance speech recognition. The Whisper base model is bundled with the package, so no internet download is required. The model size can be configured via the `WHISPER_MODEL` environment variable (default: `base`, falls back to downloaded model if bundled not found).
 
 ## Dependencies
 

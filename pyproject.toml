@@ -94,6 +94,7 @@ Issues = "https://github.com/sheldonrobinson/easy-searxng-mcp-server/issues"
 
 [project.scripts]
 easy-searxng-mcp-server = "src.main:main"
+easy-searxng-download-models = "src.common.post_install_model:main"
 
 [tool.setuptools.packages.find]
 include = ["src*", "src.*"]

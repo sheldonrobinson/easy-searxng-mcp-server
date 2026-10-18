@@ -90,6 +90,15 @@ def get_tavily_config(
 class _FasterWhisperAudioConverter:
     """Custom audio converter for markitdown using FasterWhisper."""
     
+    # Bundled model path (relative to package)
+    BUNDLED_MODEL_PATH = os.path.join(
+        os.path.dirname(__file__), 
+        "..", 
+        "..", 
+        "models", 
+        "models--Systran--faster-whisper-base"
+    )
+    
     ACCEPTED_FILE_EXTENSIONS = [".wav", ".mp3", ".m4a", ".mp4"]
     ACCEPTED_MIME_TYPE_PREFIXES = [
         "audio/x-wav",
@@ -99,13 +108,21 @@ class _FasterWhisperAudioConverter:
     
     def __init__(self):
         self._model = None
-        self._model_size = os.getenv("WHISPER_MODEL", "tiny")
+        self._model_size = os.getenv("WHISPER_MODEL", "base")
+        self._model_path = os.getenv("WHISPER_MODEL_PATH", self.BUNDLED_MODEL_PATH)
     
     def _get_model(self):
         if self._model is None:
             from faster_whisper import WhisperModel
+            
+            # Try bundled model first, fallback to download
+            if os.path.exists(self._model_path):
+                model_path = self._model_path
+            else:
+                model_path = self._model_size
+            
             self._model = WhisperModel(
-                self._model_size, 
+                model_path, 
                 device="cpu", 
                 compute_type="int8"
             )
