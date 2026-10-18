@@ -87,10 +87,10 @@ youtube-transcription = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/sheldonrobinson/AI4AII"
-Documentation = "https://github.com/sheldonrobinson/AI4AII#readme"
-Repository = "https://github.com/sheldonrobinson/AI4AII.git"
-Issues = "https://github.com/sheldonrobinson/AI4AII/issues"
+Homepage = "https://github.com/sheldonrobinson/easy-searxng-mcp-server"
+Documentation = "https://github.com/sheldonrobinson/easy-searxng-mcp-server#readme"
+Repository = "https://github.com/sheldonrobinson/easy-searxng-mcp-server.git"
+Issues = "https://github.com/sheldonrobinson/easy-searxng-mcp-server/issues"
 
 [project.scripts]
 easy-searxng-mcp-server = "src.main:main"
