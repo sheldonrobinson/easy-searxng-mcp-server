@@ -36,8 +36,8 @@ from mcp.types import (
     TextContent,
 )
 
-from searxng.client import SearchError, SearchParameters, SearchPort, SearchQuery
-from searxng.adapters import HttpSearchAdapter
+from searxng_mcp import SearchError, SearchParameters, SearchPort, SearchQuery
+from searxng_mcp import HttpSearchAdapter
 
 from common.config import setup_logger
 from tavily.adapter import TavilyAdapter, TavilyAdapterConfig
@@ -378,7 +378,7 @@ def main() -> None:
     # For embedded mode, start searxng MCP server in-process
     if args.embedded:
         logger.info("Starting embedded SearXNG server in-process...")
-        import searxng.server as sxng_server_module
+        import searxng_mcp.server as sxng_server_module
 
         def _run_searxng_server():
             try:

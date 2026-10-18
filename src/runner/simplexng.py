@@ -144,7 +144,7 @@ class SimpleXNGServer:
         def _run_server():
             """Run the searxng MCP server in a new event loop."""
             try:
-                from searxng.server import serve
+                from searxng_mcp.server import serve
 
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
