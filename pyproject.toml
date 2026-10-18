@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "easy-searxng-mcp-server"
 version = "0.1.0"
-description = "Konnek SearXNG MCP Server Agent"
+description = "Open-source MCP server for SearXNG metasearch with VectorRAG reranking, audio transcription (FasterWhisper), and multi-format document support"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.8"
@@ -30,7 +30,7 @@ classifiers = [
 
 dependencies = [
     # Local searxng submodule with Windows patches
-    "searxng @ file:///${PROJECT_ROOT}/searxng#subdirectory=searxng",
+    "searxng",
     "flask",
     "waitress",
     "uvicorn",
@@ -98,6 +98,9 @@ easy-searxng-mcp-server = "src.main:main"
 [tool.setuptools.packages.find]
 include = ["src*", "src.*"]
 namespaces = false
+
+[tool.setuptools.package-data]
+easy_searxng_mcp_server = ["models/**/*"]
 
 [tool.uvx]
 default-groups = ["main"]
