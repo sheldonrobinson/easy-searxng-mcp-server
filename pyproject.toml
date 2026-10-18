@@ -30,7 +30,7 @@ classifiers = [
 
 dependencies = [
     # Local searxng submodule with Windows patches
-    "searxng-engine",
+    "searxng",
     "flask",
     "waitress",
     "uvicorn",
