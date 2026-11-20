@@ -42,6 +42,7 @@ dependencies = [
     "beautifulsoup4",
     "pyyaml",
     "platformdirs",
+    "mcp",
     "mcp-utils",
     "strif",
     "queuelib",
