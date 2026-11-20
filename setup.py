@@ -9,25 +9,20 @@ Works alongside pyproject.toml which defines the project metadata.
 
 import os
 import sys
+from datetime import date
 from setuptools import setup
 from setuptools.command.install import install
 
 
-def _get_clean_version() -> str:
-    """Read version from pyproject.toml and strip local version segment.
+def _get_build_date_version() -> str:
+    """Generate a PEP 440 compliant version from the build date.
 
-    PyPI does not allow local version identifiers (PEP 440), e.g.
-    ``0.1.0+abc123``. Strip the ``+...`` suffix so the version is
-    acceptable for upload.
+    Format: ``YYYY.MM.DD`` (e.g., ``2026.11.20``).
+    PyPI does not allow local version identifiers (PEP 440), so we use
+    a date-based version with no local segment.
     """
-    with open('pyproject.toml', encoding='utf-8') as f:
-        for line in f:
-            stripped = line.strip()
-            if stripped.startswith('version ='):
-                _, _, v = stripped.partition('=')
-                version = v.strip().strip('"').strip("'")
-                return version.split('+')[0]
-    return '0.0.0'
+    today = date.today()
+    return f"{today.year}.{today.month}.{today.day}"
 
 
 class PostInstallCommand(install):
@@ -60,7 +55,7 @@ class PostInstallCommand(install):
 
 
 setup(
-    version=_get_clean_version(),
+    version=_get_build_date_version(),
     cmdclass={
         "install": PostInstallCommand,
     },

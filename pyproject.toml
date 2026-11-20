@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "easy-searxng-mcp-server"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Open-source MCP server for SearXNG metasearch with VectorRAG reranking, audio transcription (FasterWhisper), and multi-format document support"
 readme = "README.md"
 license = {text = "MIT"}
