@@ -76,7 +76,7 @@ uvx --from easy-searxng-mcp-server easy-searxng-mcp-server [OPTIONS]
 ### Direct execution from source
 
 ```bash
-cd /resources/Projects/easy-searxng-mcp-server
+cd <path-to-source>
 ./server_entry.sh [OPTIONS]
 ```
 
