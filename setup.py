@@ -13,6 +13,23 @@ from setuptools import setup
 from setuptools.command.install import install
 
 
+def _get_clean_version() -> str:
+    """Read version from pyproject.toml and strip local version segment.
+
+    PyPI does not allow local version identifiers (PEP 440), e.g.
+    ``0.1.0+abc123``. Strip the ``+...`` suffix so the version is
+    acceptable for upload.
+    """
+    with open('pyproject.toml', encoding='utf-8') as f:
+        for line in f:
+            stripped = line.strip()
+            if stripped.startswith('version ='):
+                _, _, v = stripped.partition('=')
+                version = v.strip().strip('"').strip("'")
+                return version.split('+')[0]
+    return '0.0.0'
+
+
 class PostInstallCommand(install):
     """Custom install command that runs post-install steps."""
 
@@ -43,6 +60,7 @@ class PostInstallCommand(install):
 
 
 setup(
+    version=_get_clean_version(),
     cmdclass={
         "install": PostInstallCommand,
     },
