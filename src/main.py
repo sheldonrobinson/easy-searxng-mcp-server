@@ -146,16 +146,16 @@ class KonnekMCPServer:
     def _register_handlers(self) -> None:
         """Register MCP protocol handlers."""
 
-        @self._server.list_tools()
         async def handle_list_tools(
-            request: ListToolsRequest,
+            ctx, request: ListToolsRequest,
         ) -> ListToolsResult:
             """List available MCP tools."""
             return ListToolsResult(tools=[WEB_SEARCH_TOOL])
 
-        @self._server.call_tool()
+        self._server.add_request_handler("tools/list", ListToolsRequest, handle_list_tools)
+
         async def handle_call_tool(
-            request: CallToolRequest,
+            ctx, request: CallToolRequest,
         ) -> CallToolResult:
             """Handle MCP tool calls."""
             if request.name != WEB_SEARCH_TOOL.name:
@@ -251,6 +251,8 @@ class KonnekMCPServer:
                     ],
                     isError=True,
                 )
+
+        self._server.add_request_handler("tools/call", CallToolRequest, handle_call_tool)
 
     @property
     def server(self) -> Server:
