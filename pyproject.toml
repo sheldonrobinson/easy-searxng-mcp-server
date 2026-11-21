@@ -98,7 +98,8 @@ easy-searxng-mcp-server = "src.main:main"
 easy-searxng-download-models = "src.common.post_install_model:main"
 
 [tool.setuptools.packages.find]
-include = ["src*", "src.*"]
+where = ["src"]
+include = ["*"]
 namespaces = false
 
 [tool.setuptools.package-data]
