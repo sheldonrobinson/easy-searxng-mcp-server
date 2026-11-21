@@ -17,12 +17,20 @@ from setuptools.command.install import install
 def _get_build_date_version() -> str:
     """Generate a PEP 440 compliant version from the build date.
 
-    Format: ``YYYY.MM.DD`` (e.g., ``2026.11.20``).
+    Format: ``YYYY.mm.dd.{build-number}`` (e.g., ``2026.11.21.0``).
     PyPI does not allow local version identifiers (PEP 440), so we use
-    a date-based version with no local segment.
+    a date-based version with an incrementing build number.
+
+    The ``PACKAGE_VERSION`` environment variable, if set by the CI/CD
+    workflow, takes precedence.  Otherwise the version is derived from
+    today's date with build number ``0``.
     """
+    env_version = os.environ.get("PACKAGE_VERSION")
+    if env_version:
+        return env_version
+
     today = date.today()
-    return f"{today.year}.{today.month}.{today.day}"
+    return f"{today.year}.{today.month}.{today.day}.0"
 
 
 class PostInstallCommand(install):
