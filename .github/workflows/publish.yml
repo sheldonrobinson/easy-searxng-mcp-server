@@ -26,37 +26,12 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Compute package version
-        id: version
-        run: |
-          # Query PyPI for the latest published version
-          LATEST=$(curl -fSsl https://pypi.org/pypi/easy-searxng-mcp-server/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])")
-          echo "Latest PyPI version: $LATEST"
-
-          # Today's date in YYYY.mm.dd format
-          TODAY=$(date +%Y.%m.%d)
-          echo "Today's date: $TODAY"
-
-          # Determine build number: increment if a version for today already exists
-          if [[ "$LATEST" == "$TODAY."* ]]; then
-            BUILD_NUM=$(echo "$LATEST" | sed "s/^${TODAY}\\.//")
-            NEXT_BUILD=$((BUILD_NUM + 1))
-          else
-            NEXT_BUILD=0
-          fi
-
-          VERSION="${TODAY}.${NEXT_BUILD}"
-          echo "Computed version: $VERSION"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build twine
 
       - name: Build package
-        env:
-          PACKAGE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           python -m build --sdist --wheel --outdir dist/ .
 
