@@ -53,12 +53,16 @@ def _get_build_date_version() -> str:
     today = date.today()
     today_prefix = f"{today.year}.{today.month}.{today.day}"
 
-    if latest and latest.startswith(f"{today_prefix}."):
+    if latest == today_prefix:
+        # Exact date match (e.g., "2026.11.21") — start at build 1
+        next_build = 1
+    elif latest and latest.startswith(f"{today_prefix}."):
+        # Date + build number (e.g., "2026.11.21.3") — increment
         try:
             build_num = int(latest.split(".")[-1])
             next_build = build_num + 1
         except (ValueError, IndexError):
-            next_build = 0
+            next_build = 1
     else:
         next_build = 0
 
