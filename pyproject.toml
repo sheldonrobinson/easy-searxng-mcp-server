@@ -94,8 +94,11 @@ Repository = "https://github.com/sheldonrobinson/easy-searxng-mcp-server.git"
 Issues = "https://github.com/sheldonrobinson/easy-searxng-mcp-server/issues"
 
 [project.scripts]
-easy-searxng-mcp-server = "src.main:main"
-easy-searxng-download-models = "src.common.post_install_model:main"
+easy-searxng-mcp-server = "main:main"
+easy-searxng-download-models = "common.post_install_model:main"
+
+[tool.setuptools]
+py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
