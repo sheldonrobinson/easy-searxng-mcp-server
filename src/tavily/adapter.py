@@ -5,6 +5,7 @@ See https://docs.tavily.com/documentation/api-reference/introduction
 """
 
 import asyncio
+import io
 import os
 import tempfile
 import time
@@ -16,10 +17,18 @@ import aiohttp
 import numpy as np
 import yaml
 from bs4 import BeautifulSoup
+
 try:
-    from markitdown import MarkItDown
+    import trafilatura
+except ImportError:
+    trafilatura = None
+
+try:
+    from markitdown import MarkItDown, StreamInfo
 except ImportError:
     MarkItDown = None
+    StreamInfo = None
+
 from pydantic import BaseModel
 
 from shared.types import TavilyResult, TavilyResponse
@@ -293,6 +302,51 @@ class TavilyAdapter:
         del self._search_func
 
     @staticmethod
+    def _convert_with_markitdown(
+        body: bytes, media_type: str, encoding: str, url: str
+    ) -> str:
+        """Convert a fetched response body to Markdown when supported."""
+        if MarkItDown is None:
+            return ""
+
+        try:
+            md = MarkItDown()
+            md.enable_plugins()
+            try:
+                from faster_whisper import WhisperModel  # noqa: F401
+
+                md.register_converter(_FasterWhisperAudioConverter())
+            except ImportError:
+                pass
+
+            stream_info = None
+            if StreamInfo is not None:
+                stream_info = StreamInfo(
+                    mimetype=media_type or None,
+                    charset=(
+                        encoding
+                        if media_type.startswith("text/")
+                        else None
+                    ),
+                    url=url,
+                )
+            conversion_options = (
+                {"stream_info": stream_info}
+                if stream_info is not None
+                else {"url": url}
+            )
+            result = md.convert_stream(
+                io.BytesIO(body), **conversion_options
+            )
+            return (
+                getattr(result, "markdown", "")
+                or getattr(result, "text_content", "")
+                or ""
+            )
+        except Exception:
+            return ""
+
+    @staticmethod
     async def _fetch_raw_content(
         session: aiohttp.ClientSession,
         url: str,
@@ -301,11 +355,7 @@ class TavilyAdapter:
         timeout: int = 10,
         user_agent: str = "Mozilla/5.0",
     ) -> Optional[Dict[str, str]]:
-        """Scrap a page and return the first N characters of text.
-        
-        Uses markitdown for HTML parsing when available, falling back to
-        BeautifulSoup.
-        """
+        """Fetch a page and extract bounded text from HTML or a document."""
         try:
             async with session.get(
                 url,
@@ -315,33 +365,42 @@ class TavilyAdapter:
                 if response.status != 200:
                     return None
 
-                html = await response.text()
+                body = await response.read()
+                content_type = response.headers.get("Content-Type", "")
+                media_type = content_type.split(";", 1)[0].strip().lower()
+                encoding = getattr(response, "charset", None) or "utf-8"
+                looks_like_html = body.lstrip().lower().startswith(
+                    (b"<!doctype html", b"<html")
+                )
+                is_html = media_type in {
+                    "text/html",
+                    "application/xhtml+xml",
+                } or (not media_type and looks_like_html)
 
-                # Try markitdown first
-                text = ""
-                if MarkItDown is not None:
+                html = ""
+                if is_html:
                     try:
-                        import io
-                        md = MarkItDown()
-                        # Enable plugins for additional format support
-                        md.enable_plugins()
-                        # Register custom FasterWhisper audio converter
-                        try:
-                            from faster_whisper import WhisperModel
-                            audio_converter = _FasterWhisperAudioConverter()
-                            md.register_converter(audio_converter)
-                        except ImportError:
-                            pass  # faster-whisper not available
-                        result = md.convert(io.BytesIO(html.encode("utf-8")))
-                        text = result.text_content if hasattr(result, "text_content") else str(result)
-                    except Exception:
-                        pass  # Fall through to BeautifulSoup
+                        html = body.decode(encoding, errors="replace")
+                    except LookupError:
+                        html = body.decode("utf-8", errors="replace")
 
-                # Fallback to BeautifulSoup
+                text = ""
+                if is_html and trafilatura is not None:
+                    try:
+                        text = trafilatura.extract(
+                            html, url=url, include_comments=False
+                        ) or ""
+                    except Exception:
+                        text = ""
+
                 if not text:
+                    text = TavilyAdapter._convert_with_markitdown(
+                        body, media_type, encoding, url
+                    )
+
+                if is_html and not text:
                     try:
                         soup = BeautifulSoup(html, "html.parser")
-                        # Remove unnecessary elements
                         for tag in soup(
                             ["script", "style", "nav", "header", "footer", "aside"]
                         ):
@@ -350,7 +409,6 @@ class TavilyAdapter:
                     except Exception:
                         text = ""
 
-                # Crop to specified size
                 if len(text) > content_length:
                     text = text[:content_length] + "..."
 

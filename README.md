@@ -23,6 +23,8 @@ Search, and Brave Search.
     time range, safe search, and result limits.
 - **Tavily-Compatible Adapter**: Provides a Tavily-compatible interface
   (`TavilyAdapter`) that wraps SearXNG results in Tavily's response format.
+- **Web Content Extraction**: Uses Trafilatura for HTML article extraction and
+  optional MarkItDown conversion for supported documents and HTML fallback.
 - **Embedded SearXNG**: Optional embedded local SearXNG web app via
   `--embedded` — starts SearXNG in-process (background thread) and connects
   through `HttpSearchAdapter` on localhost. No separate server required.
@@ -195,9 +197,17 @@ Or with explicit URL:
 | `TAVILY_MAX_RESULTS` | Max results for Tavily adapter (default: 10). |
 | `TAVILY_CONTENT_LENGTH` | Content length for Tavily adapter (default: 2500). |
 
-## Supported File Formats
+## Crawled Content and Supported File Formats
 
-The server uses [markitdown](https://github.com/microsoft/markitdown) for converting various file formats to text. When enabled, the following formats are supported:
+When result crawling is enabled, the server uses
+[Trafilatura](https://pypi.org/project/trafilatura/) to extract the main text
+from HTML pages. [MarkItDown](https://pypi.org/project/markitdown/) is the
+fallback HTML converter and converts supported non-HTML documents when the
+`markitdown` extra is installed. BeautifulSoup remains a final HTML fallback.
+Responses that cannot be converted return the search snippet without failing
+the overall search.
+
+The following MarkItDown format extras are available:
 
 | Format | Installation | Description |
 | :--- | :--- | :--- |
@@ -228,7 +238,10 @@ Audio transcription uses [FasterWhisper](https://github.com/SYSTRAN/faster-whisp
 - `searxng` - Core SearXNG client and MCP server
 - `uvicorn`, `starlette`, `sse-starlette`, `anyio` - Streamable HTTP transport
 - `flask`, `waitress` - Web server for embedded mode
-- `aiohttp`, `beautifulsoup4` - Web scraping for Tavily adapter
+- `aiohttp` - Asynchronous HTTP fetching for the Tavily adapter
+- `trafilatura` - Main-text extraction from crawled HTML
+- `beautifulsoup4` - Final fallback for HTML extraction
+- `markitdown` (optional) - Markdown conversion for documents and HTML
 - `pydantic` - Data validation
 - `pyyaml`, `platformdirs` - Configuration
 - `mcp-utils`, `strif`, `queuelib` - MCP and queue utilities

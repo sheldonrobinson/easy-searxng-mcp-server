@@ -40,6 +40,8 @@ dependencies = [
     "pydantic",
     "aiohttp",
     "beautifulsoup4",
+    "trafilatura>=2.0,<2.1; python_version < '3.10'",
+    "trafilatura>=2.0,<3; python_version >= '3.10'",
     "pyyaml",
     "platformdirs",
     "mcp",
