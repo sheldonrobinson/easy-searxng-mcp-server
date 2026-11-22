@@ -107,6 +107,7 @@ namespaces = false
 
 [tool.setuptools.package-data]
 easy_searxng_mcp_server = ["models/**/*"]
+"runner.settings" = ["*.yml"]
 
 [tool.uvx]
 default-groups = ["main"]

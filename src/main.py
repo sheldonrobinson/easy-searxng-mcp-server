@@ -22,6 +22,7 @@ import sys
 import threading
 import time as _time
 from importlib.metadata import PackageNotFoundError, version as package_version
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import uvicorn
@@ -276,8 +277,109 @@ class KonnekMCPServer:
 
 
 # ---------------------------------------------------------------------------
+# Embedded SearXNG
+# ---------------------------------------------------------------------------
+
+
+def _write_embedded_settings(
+    host: str, port: int, settings_dir: Path
+) -> Path:
+    """Create an isolated SearXNG configuration with JSON search enabled."""
+    import secrets
+
+    import yaml
+
+    template_path = (
+        Path(__file__).resolve().parent
+        / "runner"
+        / "settings"
+        / "settings_template.yml"
+    )
+    settings = yaml.safe_load(template_path.read_text(encoding="utf-8"))
+
+    search_settings = settings.setdefault("search", {})
+    formats = search_settings.setdefault("formats", ["html"])
+    if "json" not in formats:
+        formats.append("json")
+
+    server_settings = settings.setdefault("server", {})
+    server_settings.update(
+        {
+            "bind_address": host,
+            "port": port,
+            "secret_key": secrets.token_hex(32),
+            "limiter": False,
+            "method": "GET",
+        }
+    )
+
+    settings_path = settings_dir / "settings.yml"
+    settings_path.write_text(
+        yaml.safe_dump(settings, sort_keys=False),
+        encoding="utf-8",
+    )
+    return settings_path
+
+
+def _start_embedded_searxng(host: str, port: int) -> None:
+    """Start the real SearXNG WSGI app and wait until it is healthy."""
+    import atexit
+    import shutil
+    import tempfile
+    import urllib.request
+
+    settings_dir = Path(tempfile.mkdtemp(prefix="easy-searxng-settings-"))
+    atexit.register(shutil.rmtree, settings_dir, ignore_errors=True)
+    settings_path = _write_embedded_settings(host, port, settings_dir)
+
+    # searx.webapp reads its configuration during import.
+    os.environ["SEARXNG_SETTINGS_PATH"] = str(settings_path)
+    os.environ["SEARXNG_HOST"] = host
+    os.environ["SEARXNG_PORT"] = str(port)
+
+    from searx.webapp import app
+    from werkzeug.serving import make_server
+
+    httpd = make_server(host, port, app, threaded=True)
+    server_thread = threading.Thread(
+        target=httpd.serve_forever,
+        name="embedded-searxng",
+        daemon=True,
+    )
+    server_thread.start()
+
+    def _stop_server():
+        if server_thread.is_alive():
+            httpd.shutdown()
+            server_thread.join(timeout=5)
+        httpd.server_close()
+
+    atexit.register(_stop_server)
+
+    url = f"http://{host}:{port}"
+    deadline = _time.monotonic() + 30
+    last_error = None
+    while _time.monotonic() < deadline:
+        if not server_thread.is_alive():
+            raise RuntimeError("Embedded SearXNG server stopped during startup")
+        try:
+            with urllib.request.urlopen(url + "/healthz", timeout=1) as response:
+                if response.status == 200:
+                    logger.info("Embedded SearXNG server ready at %s", url)
+                    return
+        except Exception as exc:  # pylint: disable=broad-except
+            last_error = exc
+        _time.sleep(0.1)
+
+    raise RuntimeError(
+        f"Embedded SearXNG server did not become ready at {url}"
+    ) from last_error
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     """Main entry point for Konnek SearXNG MCP Server."""
@@ -304,8 +406,8 @@ def main() -> None:
     parser.add_argument(
         "--embedded",
         action="store_true",
-        help="Start searxng MCP server in-process (background thread) on "
-        "localhost, then connect via HttpSearchAdapter. No separate Flask "
+        help="Start the SearXNG web app in-process (background thread) on "
+        "localhost, then connect via HttpSearchAdapter. No separate SearXNG "
         "server is required.",
     )
     parser.add_argument(
@@ -402,38 +504,11 @@ def main() -> None:
         )
     )
 
-    # For embedded mode, start searxng MCP server in-process
+    # Embedded mode must serve the SearXNG /search endpoint, not another
+    # MCP HTTP server or the placeholder compatibility ASGI app.
     if args.embedded:
         logger.info("Starting embedded SearXNG server in-process...")
-        import searxng_mcp.server as sxng_server_module
-
-        def _run_searxng_server():
-            try:
-                asyncio.run(
-                    sxng_server_module.serve(
-                        instance_url=searxng_url,
-                        timeout=30,
-                        transport="http",
-                        host=args.sxng_host,
-                        port=args.sxng_port,
-                    )
-                )
-            except Exception as exc:  # pylint: disable=broad-except
-                logger.error(
-                    "Embedded SearXNG server error: %s", exc, exc_info=True
-                )
-
-        searxng_thread = threading.Thread(
-            target=_run_searxng_server, daemon=True
-        )
-        searxng_thread.start()
-
-        logger.info(
-            "Embedded SearXNG server starting at %s", searxng_url
-        )
-
-        # Give the server a moment to start
-        _time.sleep(2)
+        _start_embedded_searxng(args.sxng_host, args.sxng_port)
 
     # Create search port and MCP server
     search_port = KonnekSearchPort(instance_url=searxng_url)
