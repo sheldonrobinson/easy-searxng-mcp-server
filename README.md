@@ -23,10 +23,9 @@ Search, and Brave Search.
     time range, safe search, and result limits.
 - **Tavily-Compatible Adapter**: Provides a Tavily-compatible interface
   (`TavilyAdapter`) that wraps SearXNG results in Tavily's response format.
-- **Embedded SearXNG**: Optional embedded local SearXNG MCP server via
-  `--embedded` flag — starts searxng's MCP server in-process (background
-  thread) and connects via `HttpSearchAdapter` on localhost. No separate
-  Flask server required.
+- **Embedded SearXNG**: Optional embedded local SearXNG web app via
+  `--embedded` — starts SearXNG in-process (background thread) and connects
+  through `HttpSearchAdapter` on localhost. No separate server required.
 - **Dual Transport Support**:
   - **stdio**: MCP over Standard Input/Output (default).
   - **streamable-http**: MCP over Streamable HTTP (Starlette + uvicorn).
@@ -88,7 +87,7 @@ cd <path-to-source>
 | :--- | :--- |
 | `--version` | Print the package version and exit. The version is also included in `-h`/`--help` output. |
 | `--transport` | MCP transport: `stdio` (default) or `streamable-http`. |
-| `--embedded` | Start searxng MCP server in-process on localhost, then connect via HttpSearchAdapter. No separate Flask server required. |
+| `--embedded` | Start the SearXNG web app in-process on localhost, then connect via HttpSearchAdapter. No separate server required. |
 | `--http` | Connect to a remote SearXNG instance via HTTP (requires `--searxng-url` or `SEARXNG_URL` env var). |
 | `--searxng-url` | URL of the remote SearXNG instance (e.g., `http://127.0.0.1:11888`). |
 | `--host` | Host to bind for streamable-http transport (default: 127.0.0.1). |
@@ -100,9 +99,32 @@ cd <path-to-source>
 | `--embeddings-dim` | Embedding dimension (omit for llama-server to use model's n_embd). |
 
 > Note: `--embedded` is the recommended way to run locally. It starts the
-> SearXNG MCP server in-process and connects automatically. Using
+> SearXNG web app in-process and connects automatically. Using
 > `--searxng-url=http://127.0.0.1:11888` achieves the same result
 > but requires you to start the SearXNG server separately.
+
+### Remote SearXNG requirements
+
+A remote instance must permit automated search requests. The client prefers
+JSON output and also supports results rendered with SearXNG's simple HTML
+theme. If an instance rejects JSON with SearXNG's standard `403 Forbidden`
+response because JSON is disabled, the client retries once as an equivalent
+browser-style HTML search. To enable JSON explicitly, use:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+The MCP `safe_search` argument is forwarded to SearXNG as `safesearch`.
+Browser access alone does not guarantee unattended access: Anubis or similar
+anti-bot systems can return an HTML challenge with HTTP 200, and a rate-limited
+instance can return HTTP 429. The client reports these responses explicitly;
+it does not parse challenges as results, bypass access controls, or retry
+rate-limited requests. Choose an instance that permits automated access or use
+`--embedded`.
 
 ### VectorRAG (Optional)
 

@@ -44,6 +44,9 @@ class MCPRequestHandlerTests(IsolatedAsyncioTestCase):
 
             listed = await client.list_tools()
             self.assertEqual([tool.name for tool in listed.tools], ["web_search"])
+            self.assertIn(
+                "safe_search", listed.tools[0].input_schema["properties"]
+            )
 
             called = await client.call_tool(
                 "web_search",
@@ -51,6 +54,7 @@ class MCPRequestHandlerTests(IsolatedAsyncioTestCase):
                     "query": "Riemann Hypothesis",
                     "categories": ["general"],
                     "max_results": 1,
+                    "safe_search": 0,
                 },
             )
             self.assertFalse(called.is_error)
@@ -81,6 +85,7 @@ class MCPRequestHandlerTests(IsolatedAsyncioTestCase):
         self.assertEqual(query.text, "Riemann Hypothesis")
         self.assertEqual(parameters.categories, ("general",))
         self.assertEqual(parameters.max_results, 1)
+        self.assertEqual(parameters.safe_search, 0)
 
     async def test_compatibility_stdio_server_accepts_list_and_call_params(self):
         search_port = FakeSearchPort()
@@ -117,3 +122,4 @@ class MCPRequestHandlerTests(IsolatedAsyncioTestCase):
 
         self.assertEqual(len(search_port.calls), 1)
         self.assertEqual(search_port.calls[0][0].text, "Riemann Hypothesis")
+        self.assertEqual(search_port.calls[0][1].safe_search, 0)

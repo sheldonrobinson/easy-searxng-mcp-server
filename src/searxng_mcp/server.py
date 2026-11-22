@@ -74,6 +74,11 @@ async def serve(
                                 "enum": ["day", "week", "month", "year"],
                                 "default": "all",
                             },
+                            "safe_search": {
+                                "type": "integer",
+                                "enum": [0, 1, 2],
+                                "default": 1,
+                            },
                         },
                         "required": ["query"],
                     },
@@ -122,6 +127,7 @@ async def serve(
                 language=arguments.get("language", "auto"),
                 max_results=arguments.get("max_results", 10),
                 time_range=arguments.get("time_range"),
+                safe_search=arguments.get("safe_search", 1),
             )
 
             result = await search_port.search(

@@ -30,6 +30,7 @@ class SearchParameters:
     language: str = "auto"
     max_results: int = 10
     time_range: Optional[str] = None
+    safe_search: int = 1
 
 
 class SearchPort:

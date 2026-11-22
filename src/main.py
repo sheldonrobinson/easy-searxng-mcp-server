@@ -209,6 +209,7 @@ class KonnekMCPServer:
                     language=language,
                     max_results=max_results,
                     time_range=tr,
+                    safe_search=safe_search,
                 )
 
                 result = await self._search_port.search(
