@@ -28,10 +28,10 @@ import uvicorn
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import (
-    CallToolRequest,
+    CallToolRequestParams,
     CallToolResult,
-    ListToolsRequest,
     ListToolsResult,
+    PaginatedRequestParams,
     Tool,
     TextContent,
 )
@@ -147,15 +147,17 @@ class KonnekMCPServer:
         """Register MCP protocol handlers."""
 
         async def handle_list_tools(
-            ctx, request: ListToolsRequest,
+            ctx, request: PaginatedRequestParams,
         ) -> ListToolsResult:
             """List available MCP tools."""
             return ListToolsResult(tools=[WEB_SEARCH_TOOL])
 
-        self._server.add_request_handler("tools/list", ListToolsRequest, handle_list_tools)
+        self._server.add_request_handler(
+            "tools/list", PaginatedRequestParams, handle_list_tools
+        )
 
         async def handle_call_tool(
-            ctx, request: CallToolRequest,
+            ctx, request: CallToolRequestParams,
         ) -> CallToolResult:
             """Handle MCP tool calls."""
             if request.name != WEB_SEARCH_TOOL.name:
@@ -215,9 +217,9 @@ class KonnekMCPServer:
                 formatted = []
                 for i, r in enumerate(result.results):
                     formatted.append(
-                        f"[{i + 1}] {r.title.value}\n"
-                        f"URL: {r.url.value}\n"
-                        f"{r.content.value}\n"
+                        f"[{i + 1}] {r.title}\n"
+                        f"URL: {r.url}\n"
+                        f"{r.content}\n"
                     )
 
                 return CallToolResult(
@@ -252,7 +254,9 @@ class KonnekMCPServer:
                     isError=True,
                 )
 
-        self._server.add_request_handler("tools/call", CallToolRequest, handle_call_tool)
+        self._server.add_request_handler(
+            "tools/call", CallToolRequestParams, handle_call_tool
+        )
 
     @property
     def server(self) -> Server:
@@ -420,12 +424,15 @@ def main() -> None:
         logger.info("Starting MCP server on stdio transport...")
 
         async def _run_stdio():
-            async with stdio_server() as (read_stream, write_stream):
-                await mcp_server.run(
-                    read_stream,
-                    write_stream,
-                    mcp_server.create_initialization_options(),
-                )
+            try:
+                async with stdio_server() as (read_stream, write_stream):
+                    await mcp_server.run(
+                        read_stream,
+                        write_stream,
+                        mcp_server.create_initialization_options(),
+                    )
+            finally:
+                await search_port.close()
 
         asyncio.run(_run_stdio())
 

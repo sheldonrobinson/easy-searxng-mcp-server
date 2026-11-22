@@ -44,9 +44,9 @@ def setup_logger(
     logger = logging.getLogger(__name__)
     logger.setLevel(numeric_level)
 
-    # If there is no handler, add a console handler.
+    # Stdio transports reserve stdout for JSON-RPC messages.
     if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(sys.stderr)
         formatter = logging.Formatter(log_format or DEFAULT_LOG_FORMAT)
         handler.setFormatter(formatter)
         logger.addHandler(handler)

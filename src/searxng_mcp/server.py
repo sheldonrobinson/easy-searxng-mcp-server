@@ -5,7 +5,7 @@ import logging
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import CallToolRequest, ListToolsRequest
+from mcp.types import CallToolRequestParams, PaginatedRequestParams
 
 
 logger = logging.getLogger(__name__)
@@ -45,8 +45,8 @@ async def serve(
     search_port = MCPSearchPort(adapter)
     server = Server("easy-searxng-mcp-server")
 
-    async def handle_list_tools(ctx, request):
-        from mcp.types import ListToolsRequest, ListToolsResult, Tool
+    async def handle_list_tools(ctx, request: PaginatedRequestParams):
+        from mcp.types import ListToolsResult, Tool
 
         return ListToolsResult(
             tools=[
@@ -81,9 +81,11 @@ async def serve(
             ]
         )
 
-    server.add_request_handler("tools/list", ListToolsRequest, handle_list_tools)
+    server.add_request_handler(
+        "tools/list", PaginatedRequestParams, handle_list_tools
+    )
 
-    async def handle_call_tool(ctx, request: CallToolRequest):
+    async def handle_call_tool(ctx, request: CallToolRequestParams):
         from mcp.types import CallToolResult, TextContent
 
         name = request.name
@@ -147,7 +149,9 @@ async def serve(
                 isError=True,
             )
 
-    server.add_request_handler("tools/call", CallToolRequest, handle_call_tool)
+    server.add_request_handler(
+        "tools/call", CallToolRequestParams, handle_call_tool
+    )
 
     if transport == "stdio":
         async with stdio_server() as (read_stream, write_stream):

@@ -42,6 +42,7 @@ class HttpSearchAdapter(SearchPort):
         """Perform a search via HTTP to a SearXNG instance."""
         params = {
             "q": query.text,
+            "format": "json",
             "categories": ",".join(parameters.categories),
             "engines": ",".join(parameters.engines),
             "language": parameters.language,
