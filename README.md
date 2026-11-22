@@ -86,6 +86,7 @@ cd <path-to-source>
 
 | Flag | Description |
 | :--- | :--- |
+| `--version` | Print the package version and exit. The version is also included in `-h`/`--help` output. |
 | `--transport` | MCP transport: `stdio` (default) or `streamable-http`. |
 | `--embedded` | Start searxng MCP server in-process on localhost, then connect via HttpSearchAdapter. No separate Flask server required. |
 | `--http` | Connect to a remote SearXNG instance via HTTP (requires `--searxng-url` or `SEARXNG_URL` env var). |

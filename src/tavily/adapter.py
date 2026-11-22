@@ -12,6 +12,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import re
+import aiohttp
 import numpy as np
 import yaml
 from bs4 import BeautifulSoup

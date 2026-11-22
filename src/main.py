@@ -21,6 +21,7 @@ import os
 import sys
 import threading
 import time as _time
+from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Any, Dict, List, Optional
 
 import uvicorn
@@ -44,6 +45,16 @@ from tavily.adapter import TavilyAdapter, TavilyAdapterConfig
 
 
 logger = setup_logger(level="INFO")
+
+PACKAGE_NAME = "easy-searxng-mcp-server"
+
+
+def _get_package_version() -> str:
+    """Return the installed distribution version, if metadata is available."""
+    try:
+        return package_version(PACKAGE_NAME)
+    except PackageNotFoundError:
+        return "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -270,8 +281,18 @@ class KonnekMCPServer:
 
 def main() -> None:
     """Main entry point for Konnek SearXNG MCP Server."""
+    version = _get_package_version()
     parser = argparse.ArgumentParser(
-        description="Konnek SearXNG MCP Server Agent"
+        description=(
+            "Konnek SearXNG MCP Server Agent "
+            f"(package version: {version})"
+        )
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {version}",
+        help="show package version and exit",
     )
     parser.add_argument(
         "--transport",
