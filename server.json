@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.sheldonrobinson/easy-searxng-mcp-server",
+  "title": "Easy SearXNG MCP Server",
+  "description": "Search the web through SearXNG with optional reranking and document processing.",
+  "version": "2026.11.21.2",
+  "websiteUrl": "https://github.com/sheldonrobinson/easy-searxng-mcp-server#readme",
+  "repository": {
+    "url": "https://github.com/sheldonrobinson/easy-searxng-mcp-server",
+    "source": "github",
+    "id": "1423967643"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "easy-searxng-mcp-server",
+      "version": "2026.11.21.2",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SEARXNG_URL",
+          "description": "URL of the SearXNG instance used for web search",
+          "isRequired": false,
+          "default": "https://searx.party"
+        },
+        {
+          "name": "EMBEDDINGS_URL",
+          "description": "Optional OpenAI-compatible embeddings endpoint for result reranking",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

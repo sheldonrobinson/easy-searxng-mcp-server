@@ -1,4 +1,4 @@
-name: Publish to PyPI
+name: Build & Publish to PyPI and MCP Registry
 
 on:
   release:
@@ -6,17 +6,27 @@ on:
   push:
     tags:
       - 'v*'
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: publish-easy-searxng-mcp-server
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  MCP_PUBLISHER_VERSION: v1.8.12
 
 jobs:
   build-and-publish:
-    name: Build and publish to PyPI
+    name: Build and publish package and registry metadata
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/easy-searxng-mcp-server
-    permissions:
-      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -29,11 +39,71 @@ jobs:
       - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install build twine
+          python -m pip install build twine
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Download and verify mcp-publisher
+        shell: bash
+        run: |
+          set -euo pipefail
+          os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+          arch="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
+          archive="mcp-publisher_${os}_${arch}.tar.gz"
+          base_url="https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}"
+
+          curl --fail --location --silent --show-error --output "${archive}" "${base_url}/${archive}"
+          curl --fail --location --silent --show-error --output "${archive}.sigstore.json" "${base_url}/${archive}.sigstore.json"
+          cosign verify-blob \
+            --bundle "${archive}.sigstore.json" \
+            --certificate-identity "https://github.com/modelcontextprotocol/registry/.github/workflows/release.yml@refs/tags/${MCP_PUBLISHER_VERSION}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${archive}"
+          tar xzf "${archive}" mcp-publisher
+          rm -f "${archive}" "${archive}.sigstore.json"
+          ./mcp-publisher --version
 
       - name: Build package
+        id: build
+        shell: bash
         run: |
           python -m build --sdist --wheel --outdir dist/ .
+          VERSION="$(python - <<'PY'
+          from email.parser import Parser
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          wheels = list(Path("dist").glob("*.whl"))
+          if len(wheels) != 1:
+              raise SystemExit(f"Expected exactly one wheel, found {len(wheels)}")
+
+          with ZipFile(wheels[0]) as wheel:
+              metadata_name = next(
+                  name for name in wheel.namelist()
+                  if name.endswith(".dist-info/METADATA")
+              )
+              metadata = Parser().parsestr(
+                  wheel.read(metadata_name).decode("utf-8")
+              )
+
+          print(metadata["Version"])
+          PY
+          )"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Built package version ${VERSION}"
+
+      - name: Synchronize MCP Registry version
+        env:
+          PACKAGE_VERSION: ${{ steps.build.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --arg version "${PACKAGE_VERSION}" \
+            '.version = $version | .packages |= map(.version = $version)' \
+            server.json > server.json.tmp
+          mv server.json.tmp server.json
+          cat server.json
 
       - name: Publish to PyPI
         env:
@@ -41,3 +111,40 @@ jobs:
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
         run: |
           python -m twine upload --repository-url https://upload.pypi.org/legacy/ --skip-existing dist/*
+
+      - name: Wait for PyPI package availability
+        env:
+          PACKAGE_VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          version = os.environ["PACKAGE_VERSION"]
+          url = f"https://pypi.org/pypi/easy-searxng-mcp-server/{version}/json"
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen(url, timeout=10) as response:
+                      package = json.load(response)
+                  if package["info"]["version"] == version:
+                      print(f"PyPI package {version} is available")
+                      break
+              except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
+                  pass
+
+              if attempt == 29:
+                  raise SystemExit(f"Timed out waiting for PyPI package {version}")
+              time.sleep(10)
+          PY
+
+      - name: Validate MCP Registry metadata
+        run: ./mcp-publisher validate
+
+      - name: Authenticate with Official MCP Registry (GitHub OIDC)
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish server.json to Official MCP Registry
+        run: ./mcp-publisher publish

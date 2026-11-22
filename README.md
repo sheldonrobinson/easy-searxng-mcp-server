@@ -1,5 +1,7 @@
 # Konnek SearXNG MCP Server
 
+<!-- mcp-name: io.github.sheldonrobinson/easy-searxng-mcp-server -->
+
 This project implements an MCP (Model Context Protocol) server for SearXNG integration,
 providing web search functionality for AI agents.
 
