@@ -34,6 +34,12 @@ from pydantic import BaseModel
 from shared.types import TavilyResult, TavilyResponse
 
 
+DEFAULT_EMBEDDINGS_DIM = 384
+DEFAULT_LOCAL_EMBEDDINGS_MODEL = (
+    "keisuke-miyako/all-MiniLM-L6-v2-ct2-int8"
+)
+
+
 class TavilyAdapterConfig(BaseModel):
     """Configuration loader for Tavily adapter."""
 
@@ -41,10 +47,42 @@ class TavilyAdapterConfig(BaseModel):
     user_agent: Optional[str] = "Mozilla/5.0 (compatible; SearchBot/1.0)"
     settings: Optional[str] = None
     # VectorRAG / embeddings options
+    smart: bool = False
     embeddings_url: Optional[str] = None
     embeddings_model: Optional[str] = None
-    embeddings_dim: Optional[int] = 0
+    embeddings_dim: Optional[int] = DEFAULT_EMBEDDINGS_DIM
+    embeddings_pooling: str = "auto"
     rerank_top_k: Optional[int] = 5
+
+
+def _get_embedding_settings(cfg: TavilyAdapterConfig) -> Dict[str, Any]:
+    """Resolve embedding settings without enabling reranking implicitly."""
+    embeddings_url = cfg.embeddings_url or os.getenv("EMBEDDINGS_URL")
+    embeddings_model = cfg.embeddings_model or os.getenv("EMBEDDINGS_MODEL")
+    if not embeddings_url and not embeddings_model:
+        embeddings_model = DEFAULT_LOCAL_EMBEDDINGS_MODEL
+
+    return {
+        "smart": cfg.smart,
+        "embeddings_url": embeddings_url,
+        "embeddings_model": embeddings_model,
+        "embeddings_dim": int(
+            os.getenv(
+                "EMBEDDINGS_DIM",
+                str(
+                    cfg.embeddings_dim
+                    if cfg.embeddings_dim is not None
+                    else DEFAULT_EMBEDDINGS_DIM
+                ),
+            )
+        ),
+        "embeddings_pooling": os.getenv(
+            "EMBEDDINGS_POOLING", cfg.embeddings_pooling or "auto"
+        ),
+        "rerank_top_k": int(
+            os.getenv("RERANK_TOP_K", str(cfg.rerank_top_k or 5))
+        ),
+    }
 
 
 def get_tavily_config(
@@ -70,16 +108,7 @@ def get_tavily_config(
                 if cfg.user_agent
                 else app_settings["user_agent"],
                 settings=str(config_path),
-                embeddings_url=cfg.embeddings_url or os.getenv("EMBEDDINGS_URL"),
-                embeddings_model=cfg.embeddings_model or os.getenv(
-                    "EMBEDDINGS_MODEL", "text-embedding-3-small"
-                ),
-                embeddings_dim=cfg.embeddings_dim or int(
-                    os.getenv("EMBEDDINGS_DIM", "1536")
-                ),
-                rerank_top_k=cfg.rerank_top_k or int(
-                    os.getenv("RERANK_TOP_K", "5")
-                ),
+                **_get_embedding_settings(cfg),
             )
 
     return TavilyAdapterConfig(
@@ -88,10 +117,7 @@ def get_tavily_config(
             os.getenv("TAVILY_USER_AGENT", cfg.user_agent or "")
         ),
         settings="",
-        embeddings_url=cfg.embeddings_url or os.getenv("EMBEDDINGS_URL"),
-        embeddings_model=os.getenv("EMBEDDINGS_MODEL") or cfg.embeddings_model,
-        embeddings_dim=cfg.embeddings_dim or int(os.getenv("EMBEDDINGS_DIM", "0")),
-        rerank_top_k=int(os.getenv("RERANK_TOP_K", str(cfg.rerank_top_k or 5))),
+        **_get_embedding_settings(cfg),
     )
 
 
@@ -170,42 +196,140 @@ class _FasterWhisperAudioConverter:
 
 
 class _VectorRAG:
-    """Lightweight VectorRAG using LanceDB + OpenAI-compatible embeddings."""
+    """Lightweight VectorRAG using local CTranslate2 or remote embeddings."""
 
     def __init__(
         self,
-        embeddings_url: str,
+        embeddings_url: Optional[str] = None,
         model: str = "",
-        dim: int = 0,
-        api_key: str = "",
+        dim: int = DEFAULT_EMBEDDINGS_DIM,
+        api_key: Optional[str] = None,
+        pooling: str = "auto",
     ):
-        self._embeddings_url = embeddings_url.rstrip("/")
-        self._model = model
+        url = (embeddings_url or "").strip()
+        if url.lower() == "openai":
+            url = "https://api.openai.com/v1/embeddings"
+        elif url:
+            url = url.rstrip("/")
+            if not url.endswith("/embeddings"):
+                url = f"{url}/embeddings"
+
+        self._embeddings_url = url or None
+        self._model = model or (
+            "" if self._embeddings_url else DEFAULT_LOCAL_EMBEDDINGS_MODEL
+        )
         self._dim = dim
-        self._api_key = api_key
+        self._api_key = (
+            os.getenv("OPENAI_API_KEY", "") if api_key is None else api_key
+        )
+        self._pooling = (pooling or "auto").lower()
+        if self._pooling not in {"auto", "mean", "cls"}:
+            raise ValueError("Embedding pooling must be 'auto', 'mean', or 'cls'")
+
+        self._encoder = None
+        self._tokenizer = None
         self._db = None
         self._table = None
+        self._tmpdir = None
 
     async def __aenter__(self):
         import lancedb
 
-        tmpdir = tempfile.mkdtemp(prefix="easy-searxng-rag_")
-        self._db = lancedb.connect(tmpdir)
+        self._tmpdir = tempfile.mkdtemp(prefix="easy-searxng-rag_")
+        self._db = lancedb.connect(self._tmpdir)
         return self
 
     async def __aexit__(self, *exc):
-        if self._db:
+        if self._tmpdir:
             import shutil
-            shutil.rmtree(self._db.path, ignore_errors=True)
+
+            # LanceDB connections do not expose a portable path attribute.
+            # Remove the directory this instance created instead.
+            shutil.rmtree(self._tmpdir, ignore_errors=True)
         self._db = None
         self._table = None
+        self._encoder = None
+        self._tokenizer = None
+        self._tmpdir = None
 
-    async def _embed(self, texts: List[str]) -> List[List[float]]:
-        """Call OpenAI-compatible embeddings endpoint."""
-        url = f"{self._embeddings_url}/embeddings"
-        headers = {
-            "Content-Type": "application/json",
-        }
+    def _get_local_pooling(self) -> str:
+        """Select the pooling used by the supported sentence encoders."""
+        if self._pooling != "auto":
+            return self._pooling
+        model_name = self._model.lower().replace("\\", "/")
+        if "bge-" in model_name or "granite-embedding" in model_name:
+            return "cls"
+        return "mean"
+
+    def _embed_local(self, texts: List[str]) -> List[List[float]]:
+        """Embed texts with a pre-converted CTranslate2 Hugging Face model."""
+        try:
+            import ctranslate2
+            from huggingface_hub import snapshot_download
+            from transformers import AutoTokenizer
+        except ImportError as exc:
+            raise RuntimeError(
+                "Local VectorRAG embeddings require ctranslate2, "
+                "huggingface-hub, and transformers. Install the "
+                "'embeddings' or 'all' optional dependency group."
+            ) from exc
+
+        if self._encoder is None:
+            if os.path.isdir(self._model):
+                model_path = os.path.abspath(self._model)
+            else:
+                model_path = snapshot_download(repo_id=self._model)
+            self._tokenizer = AutoTokenizer.from_pretrained(model_path)
+            self._encoder = ctranslate2.Encoder(model_path, device="cpu")
+
+        encoded = self._tokenizer(
+            list(texts),
+            padding=False,
+            truncation=True,
+            return_attention_mask=False,
+        )
+        input_ids = encoded["input_ids"]
+        forward_kwargs = {}
+        if encoded.get("token_type_ids") is not None:
+            forward_kwargs["token_type_ids"] = encoded["token_type_ids"]
+
+        output = self._encoder.forward_batch(input_ids, **forward_kwargs)
+        # CTranslate2 4.5 returns a StorageView; newer versions return an
+        # EncoderForwardOutput containing last_hidden_state.
+        hidden_state = getattr(output, "last_hidden_state", output)
+        hidden = np.array(hidden_state, dtype=np.float32)
+        if hidden.ndim != 3 or hidden.shape[0] != len(texts):
+            raise RuntimeError(
+                "CTranslate2 returned an unexpected encoder output shape: "
+                f"{hidden.shape}"
+            )
+
+        if self._get_local_pooling() == "cls":
+            pooled = hidden[:, 0, :]
+        else:
+            lengths = np.asarray(
+                [len(sequence) for sequence in input_ids], dtype=np.int64
+            )
+            mask = (
+                np.arange(hidden.shape[1])[None, :] < lengths[:, None]
+            ).astype(hidden.dtype)
+            denominator = np.maximum(mask.sum(axis=1, keepdims=True), 1.0)
+            pooled = (hidden * mask[..., None]).sum(axis=1) / denominator
+
+        norms = np.linalg.norm(pooled, axis=1, keepdims=True)
+        vectors = pooled / np.maximum(norms, 1e-12)
+        actual_dim = int(vectors.shape[-1])
+        if self._dim > 0 and actual_dim != self._dim:
+            raise RuntimeError(
+                f"Local embedding dimension mismatch: EMBEDDINGS_DIM={self._dim}, "
+                f"but model {self._model!r} produced actual dimension {actual_dim}. "
+                "Set EMBEDDINGS_DIM to the model's output dimension."
+            )
+        return vectors.tolist()
+
+    async def _embed_remote(self, texts: List[str]) -> List[List[float]]:
+        """Call an OpenAI-compatible embeddings endpoint."""
+        headers = {"Content-Type": "application/json"}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
@@ -218,7 +342,9 @@ class _VectorRAG:
                 body["model"] = self._model
             if self._dim > 0:
                 body["dimensions"] = self._dim
-            async with session.post(url, json=body, headers=headers) as resp:
+            async with session.post(
+                self._embeddings_url, json=body, headers=headers
+            ) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     raise RuntimeError(
@@ -226,13 +352,24 @@ class _VectorRAG:
                     )
                 data = await resp.json()
 
-        # OpenAI-compatible response format
         items = data.get("data", [])
         if len(items) != len(texts):
             raise RuntimeError(
                 f"Embeddings count mismatch: got {len(items)}, expected {len(texts)}"
             )
         return [item["embedding"] for item in items]
+
+    async def _embed(self, texts: List[str]) -> List[List[float]]:
+        """Embed locally without a URL, or through an OpenAI-compatible URL."""
+        if not texts:
+            return []
+        if self._embeddings_url:
+            return await self._embed_remote(texts)
+
+        # Model download, tokenization, and inference are synchronous. Keep them
+        # off the MCP event loop; run_in_executor also supports Python 3.8.
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self._embed_local, texts)
 
     async def add_results(self, results: List[Dict[str, Any]]) -> None:
         """Embed and store search results in the vector index."""
@@ -269,7 +406,7 @@ class _VectorRAG:
         # LanceDB expects numpy array for search
         query_array = np.array(query_embedding, dtype=np.float32)
         result = self._table.search(query_array).limit(top_k).to_list()
-        
+
         # Sort by _distance ascending (closest first)
         result.sort(key=lambda r: r.get("_distance", 0.0))
         return result
@@ -432,8 +569,10 @@ class TavilyAdapter:
         user_agent: str = "Mozilla/5.0",
         embeddings_url: Optional[str] = None,
         embeddings_model: Optional[str] = None,
-        embeddings_dim: int = 0,
+        embeddings_dim: int = DEFAULT_EMBEDDINGS_DIM,
         rerank_top_k: int = 5,
+        smart: bool = False,
+        embeddings_pooling: str = "auto",
     ) -> TavilyResponse:
         """
         Convert SearXNG results to Tavily-compatible response.
@@ -447,11 +586,13 @@ class TavilyAdapter:
             content_length: Maximum content length per result.
             timeout: HTTP timeout for scraping.
             user_agent: User agent string for scraping.
-            embeddings_url: OpenAI-compatible embeddings endpoint URL.
-                When provided, VectorRAG re-ranking is applied.
-            embeddings_model: Embedding model name (default: text-embedding-3-small).
-            embeddings_dim: Embedding dimension (default: 1536).
+            embeddings_url: OpenAI-compatible endpoint. Without a URL, smart
+                mode uses a local pre-converted CTranslate2 model.
+            embeddings_model: Remote model name or local Hugging Face slug.
+            embeddings_dim: Expected/requested embedding dimension (default: 384).
             rerank_top_k: Number of top results to return after reranking.
+            smart: Enable VectorRAG reranking without requiring a remote URL.
+            embeddings_pooling: Local pooling mode: auto, mean, or cls.
 
         Returns:
             A TavilyResponse.
@@ -484,12 +625,14 @@ class TavilyAdapter:
                 }
 
         # --- VectorRAG re-ranking ------------------------------------------------
-        if embeddings_url and accepted_results:
+        # Keep URL-only activation for compatibility with earlier releases.
+        if (smart or embeddings_url) and accepted_results:
             try:
                 async with _VectorRAG(
                     embeddings_url=embeddings_url,
                     model=embeddings_model,
                     dim=embeddings_dim,
+                    pooling=embeddings_pooling,
                 ) as rag:
                     await rag.add_results(accepted_results)
                     reranked = await rag.rerank(query, top_k=rerank_top_k)

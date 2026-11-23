@@ -40,9 +40,15 @@ from mcp.types import (
 
 from searxng_mcp import SearchError, SearchParameters, SearchPort, SearchQuery
 from searxng_mcp import HttpSearchAdapter
+from searxng_mcp.adapters import SearchResult, SearchResultCollection
 
 from common.config import setup_logger
-from tavily.adapter import TavilyAdapter, TavilyAdapterConfig
+from tavily.adapter import (
+    DEFAULT_EMBEDDINGS_DIM,
+    DEFAULT_LOCAL_EMBEDDINGS_MODEL,
+    TavilyAdapter,
+    TavilyAdapterConfig,
+)
 
 
 logger = setup_logger(level="INFO")
@@ -137,7 +143,50 @@ class KonnekSearchPort(SearchPort):
     async def search(
         self, query: SearchQuery, parameters: SearchParameters
     ):
-        return await self._adapter.search(query, parameters)
+        result = await self._adapter.search(query, parameters)
+        config = TavilyAdapter.get_tavily_config()
+        if (
+            not result.results
+            or config is None
+            or not (config.smart or config.embeddings_url)
+        ):
+            return result
+
+        raw_results = [
+            {
+                "title": item.title,
+                "url": item.url,
+                "content": item.content,
+            }
+            for item in result.results
+        ]
+        reranked = await TavilyAdapter.crawl(
+            search_results=raw_results,
+            query=query.text,
+            max_results=parameters.max_results,
+            timeout=config.timeout or 10,
+            user_agent=config.user_agent or "Mozilla/5.0",
+            embeddings_url=config.embeddings_url,
+            embeddings_model=config.embeddings_model,
+            embeddings_dim=(
+                config.embeddings_dim
+                if config.embeddings_dim is not None
+                else DEFAULT_EMBEDDINGS_DIM
+            ),
+            rerank_top_k=config.rerank_top_k or 5,
+            smart=config.smart,
+            embeddings_pooling=config.embeddings_pooling,
+        )
+        return SearchResultCollection(
+            results=[
+                SearchResult(
+                    title=item.title or "",
+                    url=item.url or "",
+                    content=item.content or "",
+                )
+                for item in reranked.results
+            ]
+        )
 
     async def close(self):
         await self._adapter.close()
@@ -443,22 +492,36 @@ def main() -> None:
         help="Host for embedded SearXNG server (default: 127.0.0.1).",
     )
     parser.add_argument(
+        "--smart",
+        action="store_true",
+        help=(
+            "Enable VectorRAG reranking. Uses local CTranslate2 embeddings "
+            "unless an OpenAI-compatible embeddings URL is configured."
+        ),
+    )
+    parser.add_argument(
         "--embeddings-url",
         type=str,
         default=None,
-        help="OpenAI-compatible embeddings endpoint URL for VectorRAG reranking.",
+        help=(
+            "OpenAI-compatible embeddings endpoint URL, or 'openai' for "
+            "https://api.openai.com/v1/embeddings."
+        ),
     )
     parser.add_argument(
         "--embeddings-model",
         type=str,
         default=None,
-        help="Embedding model name (default: uses server's loaded model).",
+        help=(
+            "Remote model name or local pre-converted CTranslate2 Hugging "
+            f"Face slug (local default: {DEFAULT_LOCAL_EMBEDDINGS_MODEL})."
+        ),
     )
     parser.add_argument(
         "--embeddings-dim",
         type=int,
         default=None,
-        help="Embedding dimension (default: uses model's n_embd).",
+        help=f"Embedding dimension (default: {DEFAULT_EMBEDDINGS_DIM}).",
     )
 
     args = parser.parse_args()
@@ -475,7 +538,10 @@ def main() -> None:
         embeddings_model = args.embeddings_model
     elif os.getenv("EMBEDDINGS_MODEL"):
         embeddings_model = os.getenv("EMBEDDINGS_MODEL")
+    elif not embeddings_url:
+        embeddings_model = DEFAULT_LOCAL_EMBEDDINGS_MODEL
     else:
+        # Preserve support for remote servers with one preloaded model.
         embeddings_model = None
 
     if args.embeddings_dim is not None:
@@ -483,7 +549,7 @@ def main() -> None:
     elif os.getenv("EMBEDDINGS_DIM"):
         embeddings_dim = int(os.getenv("EMBEDDINGS_DIM"))
     else:
-        embeddings_dim = 0
+        embeddings_dim = DEFAULT_EMBEDDINGS_DIM
 
     # Determine SearXNG URL
     if args.embedded:
@@ -499,9 +565,11 @@ def main() -> None:
     TavilyAdapter.configure_tavily_adapter(
         tavily_config=TavilyAdapterConfig(
             settings=None,
+            smart=args.smart,
             embeddings_url=embeddings_url,
             embeddings_model=embeddings_model,
             embeddings_dim=embeddings_dim,
+            embeddings_pooling=os.getenv("EMBEDDINGS_POOLING", "auto"),
         )
     )
 

@@ -25,6 +25,8 @@ Search, and Brave Search.
   (`TavilyAdapter`) that wraps SearXNG results in Tavily's response format.
 - **Web Content Extraction**: Uses Trafilatura for HTML article extraction and
   optional MarkItDown conversion for supported documents and HTML fallback.
+- **Smart VectorRAG Reranking**: Optional `--smart` semantic reranking with
+  local CTranslate2 Hugging Face models or OpenAI-compatible embeddings.
 - **Embedded SearXNG**: Optional embedded local SearXNG web app via
   `--embedded` — starts SearXNG in-process (background thread) and connects
   through `HttpSearchAdapter` on localhost. No separate server required.
@@ -96,9 +98,10 @@ cd <path-to-source>
 | `--port` | Port to bind for streamable-http transport (default: 8000). |
 | `--sxng-port` | Port for embedded SearXNG server (default: 11888). |
 | `--sxng-host` | Host for embedded SearXNG server (default: 127.0.0.1). |
-| `--embeddings-url` | OpenAI-compatible embeddings endpoint URL for VectorRAG reranking. |
-| `--embeddings-model` | Embedding model name (omit for llama-server to use loaded model). |
-| `--embeddings-dim` | Embedding dimension (omit for llama-server to use model's n_embd). |
+| `--smart` | Enable VectorRAG reranking with local CTranslate2 embeddings, or remote embeddings when a URL is configured. |
+| `--embeddings-url` | OpenAI-compatible embeddings endpoint URL. Use `openai` for the official OpenAI endpoint. |
+| `--embeddings-model` | Remote model name or local pre-converted CTranslate2 Hugging Face slug. |
+| `--embeddings-dim` | Requested/expected embedding dimension (default: 384). |
 
 > Note: `--embedded` is the recommended way to run locally. It starts the
 > SearXNG web app in-process and connects automatically. Using
@@ -130,20 +133,61 @@ rate-limited requests. Choose an instance that permits automated access or use
 
 ### VectorRAG (Optional)
 
-When the `EMBEDDINGS_URL` environment variable is set, the server uses **VectorRAG** to rerank search results by semantic similarity using LanceDB + OpenAI-compatible embeddings.
+Pass `--smart` to rerank search results by semantic similarity using LanceDB.
+Install the `embeddings` extra (or the `all` extra for every optional feature):
+
+```bash
+uvx --from 'easy-searxng-mcp-server[embeddings]' easy-searxng-mcp-server --embedded --smart
+```
+
+Without `EMBEDDINGS_URL`, smart mode uses a local CTranslate2 encoder. The
+default is `keisuke-miyako/all-MiniLM-L6-v2-ct2-int8`; override it with a
+Hugging Face slug for any compatible, pre-converted encoder repository that
+includes its tokenizer files. The model is downloaded into the Hugging Face
+cache on first use, so initial use requires network access unless it is already
+cached. Runtime model conversion and PyTorch are not required.
+
+Examples of compatible 384-dimensional models include:
+
+- `keisuke-miyako/all-MiniLM-L6-v2-ct2-int8` (mean pooling)
+- `jncraton/bge-small-en-ct2-int8` (CLS pooling)
+- `jncraton/granite-embedding-107m-multilingual-ct2-int8` (CLS pooling)
+
+`EMBEDDINGS_POOLING=auto` recognizes those families. Set it to `mean` or `cls`
+for another model when needed. Local vectors are L2-normalized. A local model's
+actual output size must match `EMBEDDINGS_DIM` (384 by default).
 
 | Env Var | Default | Description |
 | :--- | :--- | :--- |
-| `EMBEDDINGS_URL` | — | OpenAI-compatible embeddings endpoint URL (required for VectorRAG) |
-| `EMBEDDINGS_MODEL` | — | Embedding model name (omit for llama-server to use loaded model) |
-| `EMBEDDINGS_DIM` | — | Embedding dimension (omit for llama-server to use model's n_embd) |
+| `EMBEDDINGS_URL` | unset (local CTranslate2) | OpenAI-compatible base URL or full `/embeddings` URL; `openai` selects `https://api.openai.com/v1/embeddings` |
+| `EMBEDDINGS_MODEL` | `keisuke-miyako/all-MiniLM-L6-v2-ct2-int8` locally; server-selected remotely | Remote model name or local pre-converted Hugging Face slug |
+| `EMBEDDINGS_DIM` | `384` | Remote requested dimension or local required output dimension |
+| `EMBEDDINGS_POOLING` | `auto` | Local pooling: `auto`, `mean`, or `cls` |
+| `OPENAI_API_KEY` | empty string | Optional Bearer token for remote embeddings |
 | `RERANK_TOP_K` | `5` | Number of top results after reranking |
 
-Example:
+Remote OpenAI example:
+
+```bash
+export EMBEDDINGS_URL=openai
+export EMBEDDINGS_MODEL=text-embedding-3-small
+export OPENAI_API_KEY=your-api-key
+uvx --from 'easy-searxng-mcp-server[embeddings]' easy-searxng-mcp-server --embedded --smart
+```
+
+For another OpenAI-compatible server, either a base URL or a full embeddings
+path works; the client does not append `/embeddings` twice:
+
 ```bash
 export EMBEDDINGS_URL=http://localhost:8080/v1
-uvx --from easy-searxng-mcp-server easy-searxng-mcp-server --embedded
+export EMBEDDINGS_MODEL=text-embedding-3-small
+uvx --from 'easy-searxng-mcp-server[embeddings]' easy-searxng-mcp-server --embedded --smart
 ```
+
+For compatibility with earlier releases, configuring `EMBEDDINGS_URL` also
+enables remote reranking without `--smart`. Local reranking requires `--smart`.
+If embedding or reranking fails, the adapter logs a warning and returns the
+original SearXNG ranking.
 
 ### Examples
 
@@ -242,6 +286,7 @@ Audio transcription uses [FasterWhisper](https://github.com/SYSTRAN/faster-whisp
 - `trafilatura` - Main-text extraction from crawled HTML
 - `beautifulsoup4` - Final fallback for HTML extraction
 - `markitdown` (optional) - Markdown conversion for documents and HTML
+- `ctranslate2`, `huggingface-hub`, `transformers` (optional) - Local smart embeddings
 - `pydantic` - Data validation
 - `pyyaml`, `platformdirs` - Configuration
 - `mcp-utils`, `strif`, `queuelib` - MCP and queue utilities
